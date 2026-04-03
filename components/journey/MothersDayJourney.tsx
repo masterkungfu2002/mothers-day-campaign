@@ -86,7 +86,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 .spread{position:absolute;inset:0;display:flex;border-radius:6px;overflow:hidden;box-shadow:0 20px 40px -12px rgba(0,0,0,.15),0 0 0 1px rgba(184,154,110,.15)}
 
 /* Left page = caption */
-.sp-l{width:50%;height:100%;background:linear-gradient(155deg,#fffcf7,#fef7ef);display:flex;align-items:center;justify-content:center;padding:clamp(.6rem,2.5vw,1.5rem);position:relative;overflow:hidden}
+.sp-l{width:50%;height:100%;background:linear-gradient(155deg,#fffcf7,#fef7ef);display:flex;align-items:center;justify-content:center;padding:clamp(.6rem,2.5vw,1.5rem);position:relative;overflow:hiddenz;index:30;}
 .sp-l::after{content:'';position:absolute;right:0;top:0;bottom:0;width:18px;background:linear-gradient(to left,rgba(0,0,0,.025),transparent);pointer-events:none}
 
 /* Right page = photo */
@@ -111,7 +111,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 .cvr-tap{position:absolute;bottom:14px;font-size:.5rem;color:rgba(60,51,38,.22);letter-spacing:.25em;text-transform:uppercase;animation:pulse 2.2s infinite}
 
 /* ── FLIP ANIMATION ── */
-.flip{position:absolute;top:0;width:50%;height:100%;z-index:25;pointer-events:none;-webkit-transform-style:preserve-3d;transform-style:preserve-3d}
+.flip{position:absolute;top:0;width:50%;height:100%;z-index:15;pointer-events:none;-webkit-transform-style:preserve-3d;transform-style:preserve-3d}
 .flip-fwd{left:50%;transform-origin:left center;animation:flipFwd .6s cubic-bezier(.36,.07,.19,.97) forwards}
 .flip-bwd{left:0;transform-origin:right center;animation:flipBwd .6s cubic-bezier(.36,.07,.19,.97) forwards}
 @keyframes flipFwd{0%{transform:rotateY(0)}100%{transform:rotateY(-180deg)}}
