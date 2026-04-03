@@ -62,7 +62,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 .bk-lbl{font-size:.6rem;letter-spacing:.45em;color:rgba(184,154,110,.5);text-transform:uppercase}
 
 /* Book Frame */
-.bk-frame{position:relative;width:min(96vw,900px);aspect-ratio:1.65/1}
+.bk-frame{position:relative;width:min(96vw,820px);aspect-ratio:1.9/1}
 @media(max-width:640px){.bk-frame{aspect-ratio:1.5/1}}
 .bk-shadow{position:absolute;bottom:-8px;left:8%;right:8%;height:16px;background:rgba(0,0,0,.08);filter:blur(12px);border-radius:50%}
 .bk-3d{position:relative;width:100%;height:100%;perspective:2400px}
@@ -150,7 +150,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 /* ── TV MODAL ── */
 .tv-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .4s}
 .tv-modal.on{opacity:1;pointer-events:auto}
-.tv-fr{position:relative;width:min(90vw,560px);background:#2a251e;border-radius:18px 18px 26px 26px;padding:14px 18px 30px;box-shadow:0 20px 40px rgba(0,0,0,.5),0 0 0 2px #5e4e38,0 0 0 5px #1f1b14}
+.tv-fr{position:relative;width:min(88vw,480px);background:#2a251e;border-radius:18px 18px 26px 26px;padding:10px 14px 24px;box-shadow:0 20px 40px rgba(0,0,0,.5),0 0 0 2px #5e4e38,0 0 0 5px #1f1b14}
 .tv-scr{background:#0f0e0a;border-radius:10px;padding:5px}
 .tv-inner{position:relative;border-radius:7px;overflow:hidden;aspect-ratio:4/3;background:#000}
 .tv-static{position:absolute;inset:0;background:#555;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='4'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");transition:opacity .6s;z-index:5}
@@ -187,6 +187,43 @@ textarea.fb-input{resize:none;height:76px}
 
 /* ── Hidden preload ── */
 .preload{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;opacity:0}
+/* ── FORCE LANDSCAPE ── */
+@media screen and (orientation: portrait) {
+  body::before {
+    content: "Please rotate your device ↻";
+    position: fixed;
+    inset: 0;
+    background: #f8f4ed;
+    color: #3c3326;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    letter-spacing: .1em;
+    z-index: 99999;
+  }
+
+  .scr, .ld, .grain, .prog {
+    display: none !important;
+  }
+}
+
+/* ── SLOW CAPTION REVEAL ── */
+.slow-reveal{
+  opacity:0;
+  filter:blur(6px);
+  transform:translateY(10px);
+  animation:fadeSlow 1.6s ease forwards;
+}
+
+@keyframes fadeSlow{
+  to{
+    opacity:1;
+    filter:blur(0);
+    transform:translateY(0);
+  }
+}
 `;
 
 /* ─────────── Seasons ─────────── */
@@ -251,7 +288,9 @@ const Caption = ({ photo, index, year }: { photo: AlbumPhoto; index: number; yea
       <div className="cap-icon">{s.em}</div>
       <div className="cap-season">{s.name}</div>
       <div className="cap-div" />
-      <div className="cap-txt">{photo.caption || 'A cherished memory'}</div>
+      <div className="cap-txt slow-reveal">
+  {photo.caption || 'A cherished memory'}
+  </div>
       <div className="cap-year">{year}</div>
     </div>
   );
