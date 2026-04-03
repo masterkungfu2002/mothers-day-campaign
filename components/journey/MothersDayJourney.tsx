@@ -140,6 +140,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 .cap-div{width:28px;height:1px;background:linear-gradient(90deg,transparent,#b89a6e,transparent);margin:.4rem 0}
 .cap-txt{font-size:clamp(.6rem,1.6vw,.78rem);color:#6b5a48;line-height:1.6;font-style:italic;font-weight:400;word-break:break-word}
 .cap-year{font-size:clamp(.4rem,1vw,.52rem);letter-spacing:.2em;color:#b89a6e;margin-top:.4rem;font-weight:500}
+.cap-txt{
+  display:block;
+  width:100%;
+  text-align:center;
+  white-space:normal; 
+}
 
 /* ── NAVIGATION ── */
 .nav{display:flex;align-items:center;gap:.7rem;opacity:0;transition:opacity .5s;margin-top:.5rem}
@@ -240,9 +246,16 @@ textarea.fb-input{resize:none;height:76px}
   }
 }
 .typing{
-  overflow:hidden;
-  white-space:normal;
-  animation:fadeUp 1.8s ease forwards;
+  opacity:0;
+  transform:translateY(10px);
+  animation:fadeUp 1.2s ease forwards;
+}
+
+@keyframes fadeUp{
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
 }
 
 @keyframes fadeUp{
