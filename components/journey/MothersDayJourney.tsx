@@ -58,11 +58,26 @@ html,body{width:100%;height:100%;overflow:hidden;background:#f8f4ed;font-family:
 .bk{overflow:hidden}
 .bk-bg{position:absolute;inset:0;transition:background 1.2s ease}
 .bk-particles{position:absolute;inset:0;pointer-events:none;z-index:1}
-.bk-wrap{position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;gap:.8rem;width:100%;max-width:1000px;padding:0 .8rem}
+.bk-wrap{
+  position:relative;
+  z-index:10;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:.8rem;
+  width:100%;
+  max-width:1000px;
+  padding:0 1.5rem;
+}
 .bk-lbl{font-size:.6rem;letter-spacing:.45em;color:rgba(184,154,110,.5);text-transform:uppercase}
 
 /* Book Frame */
-.bk-frame{position:relative;width:min(96vw,820px);aspect-ratio:1.9/1}
+.bk-frame{
+  position:relative;
+  width:min(80vw,680px); 
+  aspect-ratio:2/1;
+  margin:0 auto; 
+}
 @media(max-width:640px){.bk-frame{aspect-ratio:1.5/1}}
 .bk-shadow{position:absolute;bottom:-8px;left:8%;right:8%;height:16px;background:rgba(0,0,0,.08);filter:blur(12px);border-radius:50%}
 .bk-3d{position:relative;width:100%;height:100%;perspective:2400px}
@@ -224,6 +239,16 @@ textarea.fb-input{resize:none;height:76px}
     transform:translateY(0);
   }
 }
+.typing{
+  overflow:hidden;
+  white-space:normal;
+  animation:fadeUp 1.8s ease forwards;
+}
+
+@keyframes fadeUp{
+  0%{opacity:0; transform:translateY(15px)}
+  100%{opacity:1; transform:translateY(0)}
+}
 `;
 
 /* ─────────── Seasons ─────────── */
@@ -288,9 +313,9 @@ const Caption = ({ photo, index, year }: { photo: AlbumPhoto; index: number; yea
       <div className="cap-icon">{s.em}</div>
       <div className="cap-season">{s.name}</div>
       <div className="cap-div" />
-      <div className="cap-txt slow-reveal">
+      <div key={index} className="cap-txt typing">
   {photo.caption || 'A cherished memory'}
-  </div>
+</div>  
       <div className="cap-year">{year}</div>
     </div>
   );
