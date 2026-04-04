@@ -232,19 +232,82 @@ const SeasonIcon = ({ path }: { path: string }) => (
 );
  
 /* ─── Caption Component ─── */
+ 
+const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
+ 
 const Caption = ({ photo, index, year }: { photo: AlbumPhoto; index: number; year: string }) => {
-  const s = SEASONS[index % 4];
+  const seasonName = SEASON_NAMES[index % 4];
+  // Try multiple possible field names for caption text
+  const text = (photo as any).caption || (photo as any).description || (photo as any).text || (photo as any).message || 'A cherished memory';
+ 
   return (
-    <div className="cap">
-      <div className="cap-num">{String(index + 1).padStart(2, '0')}</div>
-      <SeasonIcon path={s.icon} />
-      <div className="cap-season">{s.name}</div>
-      <div className="cap-line" />
-      <div className="cap-txt">{photo.caption || 'A cherished memory'}</div>
-      <div className="cap-year">{year}</div>
+    <div style={{
+      textAlign: 'center',
+      width: '100%',
+      maxWidth: '90%',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '4px',
+      color: '#4a3e30',
+      fontFamily: "'Playfair Display', 'Georgia', serif",
+    }}>
+      <div style={{
+        fontSize: '0.5rem',
+        letterSpacing: '0.2em',
+        color: '#a88d66',
+        fontWeight: 600,
+        fontFamily: "'Cormorant Garamond', 'Georgia', serif",
+      }}>
+        {String(index + 1).padStart(2, '0')}
+      </div>
+ 
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b89a6e" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+        <path d="M12 3L14.5 8.5L20.5 9L16 13.5L17.5 19.5L12 16.5L6.5 19.5L8 13.5L3.5 9L9.5 8.5Z" />
+      </svg>
+ 
+      <div style={{
+        fontSize: 'clamp(0.65rem, 1.8vw, 0.9rem)',
+        fontWeight: 500,
+        letterSpacing: '0.03em',
+        color: '#4a3e30',
+      }}>
+        {seasonName}
+      </div>
+ 
+      <div style={{
+        width: '24px',
+        height: '0px',
+        borderTop: '1px solid rgba(184,154,110,0.3)',
+      }} />
+ 
+      <div style={{
+        fontSize: 'clamp(0.55rem, 1.4vw, 0.75rem)',
+        color: '#6b5a48',
+        lineHeight: 1.6,
+        fontStyle: 'italic',
+        fontWeight: 400,
+        wordBreak: 'break-word' as const,
+        fontFamily: "'Cormorant Garamond', 'Georgia', serif",
+        maxHeight: '120px',
+        overflowY: 'auto' as const,
+      }}>
+        {text}
+      </div>
+ 
+      <div style={{
+        fontSize: '0.45rem',
+        letterSpacing: '0.2em',
+        color: '#b89a6e',
+        fontWeight: 500,
+        fontFamily: "'Cormorant Garamond', 'Georgia', serif",
+      }}>
+        {year}
+      </div>
     </div>
   );
 };
+ 
  
 /* ═══════════════════════════════════════
    MAIN COMPONENT
