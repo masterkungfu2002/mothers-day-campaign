@@ -71,6 +71,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const [showTV, setShowTV] = useState(false);
   const [tvStatic, setTvStatic] = useState(true);
   const [tvLed, setTvLed] = useState(false);
+  const [phase, setPhase] = useState<'book' | 'cassette' | 'feedback'>('book');
+  const [cassetteEject, setCassetteEject] = useState(false);
   const [rating, setRating] = useState(0);
   const [fbSent, setFbSent] = useState(false);
   const [fbName, setFbName] = useState('');
@@ -118,7 +120,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setAnimating(true);
     playFlip();
     setSpread(t);
-    setTimeout(() => setAnimating(false), 950);
+    setTimeout(() => {
+      setAnimating(false);
+      // Auto-transition to cassette/feedback when reaching the end
+      if (t === numLeaves) {
+        setTimeout(() => setPhase(videoUrl ? 'cassette' : 'feedback'), 600);
+      }
+    }, 950);
   }, [animating, spread, numLeaves]);
  
   /* ═══ Keyboard ═══ */
@@ -148,24 +156,28 @@ export function MothersDayJourney({ album }: { album: Album }) {
  
   /* ═══ TV ═══ */
   const openTV = () => {
-    setShowTV(true); setTvStatic(true); setTvLed(false);
+    setCassetteEject(true);
     setTimeout(() => {
-      setTvStatic(false); setTvLed(true);
-      if (videoUrl) {
-        if (isYT(videoUrl)) {
-          const f = iRef.current;
-          if (f) { f.src = `https://www.youtube-nocookie.com/embed/${ytId(videoUrl)}?autoplay=1&controls=1&rel=0`; f.style.display = 'block'; }
-        } else {
-          const v = vRef.current;
-          if (v) { v.src = resolveUrl(videoUrl); v.muted = false; v.play().catch(() => { v.muted = true; v.play(); }); }
+      setShowTV(true); setTvStatic(true); setTvLed(false);
+      setTimeout(() => {
+        setTvStatic(false); setTvLed(true);
+        if (videoUrl) {
+          if (isYT(videoUrl)) {
+            const f = iRef.current;
+            if (f) { f.src = `https://www.youtube-nocookie.com/embed/${ytId(videoUrl)}?autoplay=1&controls=1&rel=0`; f.style.display = 'block'; }
+          } else {
+            const v = vRef.current;
+            if (v) { v.src = resolveUrl(videoUrl); v.muted = false; v.play().catch(() => { v.muted = true; v.play(); }); }
+          }
         }
-      }
-    }, 700);
+      }, 700);
+    }, 500);
   };
   const closeTV = () => {
     setShowTV(false); setTvStatic(true); setTvLed(false);
     if (vRef.current) { vRef.current.pause(); vRef.current.src = ''; }
     if (iRef.current) { iRef.current.src = ''; iRef.current.style.display = 'none'; }
+    setPhase('feedback');
   };
  
   /* ═══ Feedback ═══ */
@@ -188,9 +200,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
  
   /* ═══ Page indicator ═══ */
   const pageText = spread === 0 ? 'Cover' : spread === numLeaves ? 'End' : `${spread} / ${photos.length}`;
- 
-  /* ═══ Show end content after last page ═══ */
-  const atEnd = spread === numLeaves;
  
   /* ═════════════════════════════════════
      INLINE STYLES (no CSS class conflicts!)
@@ -220,12 +229,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
         @media(orientation:portrait){.mj-rotate{display:flex!important}.mj-main{display:none!important}}
         @keyframes mj-hint{0%,100%{opacity:.2}50%{opacity:.7}}
         @keyframes mj-spin{to{transform:rotate(360deg)}}
+        @keyframes mj-eject{0%{transform:translateY(0) scale(1);opacity:1}30%{transform:translateY(-12px) scale(1.03)}100%{transform:translateY(40px) scale(.5);opacity:0}}
+        @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
       `}} />
  
       {/* ── Rotate notice ── */}
-      <div className="mj-rotate" style={{ display:'none',position:'fixed',inset:0,zIndex:99999,background:'#0B0B0B',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'16px',fontFamily:"'Playfair Display',serif",color:'#C6A97E',textAlign:'center' }}>
-        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#C6A97E" strokeWidth="1.5" strokeLinecap="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-        <p style={{ fontSize:'1rem',lineHeight:1.5,color:'#E8DDD0' }}>Please rotate your phone<br/>to landscape mode</p>
+      <div className="mj-rotate" style={{ display:'none',position:'fixed',inset:0,zIndex:99999,background:'#F0E8DA',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'16px',fontFamily:"'Playfair Display',serif",color:'#8B7355',textAlign:'center' }}>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="1.5" strokeLinecap="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+        <p style={{ fontSize:'1rem',lineHeight:1.5,color:'#4a3f30' }}>Please rotate your phone<br/>to landscape mode</p>
         <span style={{ fontSize:'.6rem',letterSpacing:'.3em',opacity:.5 }}>FOR THE BEST EXPERIENCE</span>
       </div>
  
@@ -234,18 +245,18 @@ export function MothersDayJourney({ album }: { album: Album }) {
         {imageUrls.map((u, i) => u ? <img key={i} src={u} alt="" /> : null)}
       </div>
  
-      <div className="mj-main mj-root" style={{ position:'fixed',inset:0,userSelect:'none',WebkitUserSelect:'none',fontFamily:"'Cormorant Garamond',serif",background:'#0B0B0B',color:'#0B0B0B',overflow:'hidden' }}>
+      <div className="mj-main mj-root" style={{ position:'fixed',inset:0,userSelect:'none',WebkitUserSelect:'none',fontFamily:"'Cormorant Garamond',serif",background:'#F0E8DA',color:'#2e2a24',overflow:'hidden' }}>
  
         {/* ── Loading ── */}
         <div style={{
-          position:'fixed',inset:0,zIndex:999,background:'#0B0B0B',
+          position:'fixed',inset:0,zIndex:999,background:'#F0E8DA',
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'14px',
           transition:'opacity .6s,visibility .6s',
           opacity:loaded?0:1,visibility:loaded?'hidden':'visible',pointerEvents:loaded?'none':'auto',
         }}>
-          <div style={{ width:'40px',height:'40px',border:'1.5px solid rgba(198,169,126,.15)',borderTopColor:'#C6A97E',borderRadius:'50%',animation:'mj-spin .9s linear infinite' }} />
-          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'1.5rem',color:'#C6A97E',fontWeight:300,letterSpacing:'.1em' }}>{loadPct}%</div>
-          <div style={{ fontSize:'.55rem',letterSpacing:'.3em',textTransform:'uppercase',color:'rgba(198,169,126,.4)' }}>Preparing your memories</div>
+          <div style={{ width:'40px',height:'40px',border:'1.5px solid rgba(139,115,85,.15)',borderTopColor:'#8B7355',borderRadius:'50%',animation:'mj-spin .9s linear infinite' }} />
+          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'1.5rem',color:'#8B7355',fontWeight:300,letterSpacing:'.1em' }}>{loadPct}%</div>
+          <div style={{ fontSize:'.55rem',letterSpacing:'.3em',textTransform:'uppercase',color:'rgba(139,115,85,.4)' }}>Preparing your memories</div>
         </div>
  
         {/* ── Scene ── */}
@@ -253,11 +264,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
           position:'fixed',inset:0,display:'flex',flexDirection:'column',
           alignItems:'center',justifyContent:'center',
           gap:'clamp(12px,2.5vh,28px)',
-          background:'radial-gradient(ellipse 80% 60% at 50% 55%,#1c160f,#0B0B0B)',
+          background:'radial-gradient(ellipse 80% 60% at 50% 55%,#F5EFE7,#E8DDD0)',
         }} onTouchStart={onTS} onTouchEnd={onTE}>
  
           {/* Book wrapper */}
-          <div style={{ position:'relative',perspective:'clamp(800px,250vw,3000px)' }}>
+          <div style={{ position:'relative',perspective:'clamp(800px,250vw,3000px)',opacity:phase==='book'?1:0,transition:'opacity .6s',pointerEvents:phase==='book'?'auto':'none' }}>
             <div onClick={onBookClick} style={{
               position:'relative',
               width:'calc(var(--pw) * 2)',height:'var(--ph)',
@@ -410,7 +421,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
             {spread === 0 && (
               <div style={{
                 position:'absolute',bottom:'clamp(6px,1.5vw,12px)',left:'50%',transform:'translateX(-50%)',
-                fontSize:'clamp(7px,1.3vw,9px)',color:'rgba(198,169,126,.4)',letterSpacing:'3px',textTransform:'uppercase',
+                fontSize:'clamp(7px,1.3vw,9px)',color:'rgba(74,63,48,.35)',letterSpacing:'3px',textTransform:'uppercase',
                 pointerEvents:'none',whiteSpace:'nowrap',animation:'mj-hint 2.2s ease-in-out infinite',
               }}>
                 tap to flip
@@ -419,75 +430,112 @@ export function MothersDayJourney({ album }: { album: Album }) {
           </div>
  
           {/* ── Navigation ── */}
-          <nav style={{ display:'flex',alignItems:'center',gap:'clamp(14px,3.5vw,28px)' }}>
+          <nav style={{ display:'flex',alignItems:'center',gap:'clamp(14px,3.5vw,28px)',opacity:phase==='book'?1:0,transition:'opacity .5s' }}>
             <button disabled={spread === 0 || animating} onClick={() => goTo(spread - 1)} style={{
               width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
-              border:'1px solid rgba(198,169,126,.25)',borderRadius:'50%',color:'#C6A97E',
+              border:'1px solid rgba(139,115,85,.25)',borderRadius:'50%',color:'#8B7355',
               cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
               opacity:spread === 0 ? .15 : 1,transition:'all .2s',
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
  
-            <div style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'clamp(9px,1.8vw,12px)',color:'#C6A97E',letterSpacing:'3px',opacity:.5,minWidth:'60px',textAlign:'center' }}>
+            <div style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'clamp(9px,1.8vw,12px)',color:'#8B7355',letterSpacing:'3px',opacity:.5,minWidth:'60px',textAlign:'center' }}>
               {pageText}
             </div>
  
             <button disabled={spread === numLeaves || animating} onClick={() => goTo(spread + 1)} style={{
               width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
-              border:'1px solid rgba(198,169,126,.25)',borderRadius:'50%',color:'#C6A97E',
+              border:'1px solid rgba(139,115,85,.25)',borderRadius:'50%',color:'#8B7355',
               cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
               opacity:spread === numLeaves ? .15 : 1,transition:'all .2s',
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           </nav>
+        </div>
  
-          {/* ── End section: Video + Feedback ── */}
-          {atEnd && (
-            <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:'12px',animation:'mj-hint 2s ease 1' }}>
-              {videoUrl && !showTV && (
-                <button onClick={openTV} style={{
-                  background:'none',border:'1px solid rgba(198,169,126,.25)',borderRadius:'8px',
-                  padding:'8px 20px',color:'#C6A97E',cursor:'pointer',fontFamily:"'Cormorant Garamond',serif",
-                  fontSize:'clamp(10px,1.8vw,13px)',letterSpacing:'2px',transition:'all .2s',
-                }}>
-                  Play Video
-                </button>
-              )}
-              {!fbSent ? (
-                <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:'8px',maxWidth:'320px',width:'100%' }}>
-                  <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(12px,2.2vw,16px)',color:'#F5EFE7',marginBottom:'4px' }}>How Did We Do?</div>
-                  <div style={{ display:'flex',gap:'4px' }}>
-                    {[1,2,3,4,5].map(n => (
-                      <span key={n} onClick={() => setRating(n)} style={{
-                        fontSize:'1.2rem',cursor:'pointer',color:n <= rating ? '#C6A97E' : 'rgba(198,169,126,.15)',
-                        transition:'all .12s',
-                      }}>&#9733;</span>
-                    ))}
-                  </div>
-                  <input placeholder="Your name (optional)" value={fbName} onChange={e => setFbName(e.target.value)} style={{
-                    width:'100%',padding:'6px 10px',background:'rgba(255,255,255,.05)',border:'1px solid rgba(198,169,126,.2)',
-                    borderRadius:'8px',fontSize:'.7rem',color:'#F5EFE7',fontFamily:'inherit',outline:'none',
-                  }} />
-                  <textarea placeholder="Leave a message..." value={fbComment} onChange={e => setFbComment(e.target.value)} style={{
-                    width:'100%',padding:'6px 10px',background:'rgba(255,255,255,.05)',border:'1px solid rgba(198,169,126,.2)',
-                    borderRadius:'8px',fontSize:'.7rem',color:'#F5EFE7',fontFamily:'inherit',outline:'none',resize:'none',height:'50px',
-                  }} />
-                  <button disabled={fbLoading} onClick={submitFb} style={{
-                    width:'100%',padding:'6px',background:'linear-gradient(135deg,#9E7E56,#C6A97E)',border:'none',
-                    borderRadius:'20px',color:'#0B0B0B',fontWeight:600,fontSize:'.7rem',cursor:'pointer',fontFamily:'inherit',
-                    opacity:fbLoading?.35:1,
-                  }}>{fbLoading ? 'Sending...' : 'Send Love'}</button>
-                </div>
-              ) : (
-                <div style={{ textAlign:'center',color:'#C6A97E',fontFamily:"'Playfair Display',serif",fontSize:'1rem' }}>
-                  Thank You
-                  <div style={{ fontSize:'.65rem',color:'rgba(198,169,126,.5)',marginTop:'4px',fontFamily:"'Cormorant Garamond',serif" }}>Your message has been received with love.</div>
-                </div>
-              )}
-            </div>
-          )}
+        {/* ═══ CASSETTE SCREEN ═══ */}
+        <div style={{
+          position:'fixed',inset:0,zIndex:phase==='cassette'?50:0,
+          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'clamp(12px,2.5vh,24px)',
+          background:'radial-gradient(ellipse at 50% 45%,#F5EFE7,#E8DDD0)',
+          opacity:phase==='cassette'?1:0,pointerEvents:phase==='cassette'?'auto':'none',
+          transition:'opacity .8s ease',
+        }}>
+          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,20px)',color:'#4a3f30',letterSpacing:'.04em' }}>One Last Surprise</div>
+          <div style={{ fontSize:'clamp(8px,1.4vw,10px)',letterSpacing:'.25em',color:'rgba(139,115,85,.5)',textTransform:'uppercase' }}>press play to watch</div>
+          
+          {/* Cassette tape SVG */}
+          <div onClick={openTV} style={{
+            cursor:'pointer',transition:'transform .3s',
+            animation:cassetteEject?'mj-eject .6s forwards':'none',
+          }}
+          onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.03) translateY(-3px)')}
+          onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
+            <svg width="220" height="130" viewBox="0 0 220 130" fill="none">
+              <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8"/>
+              <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef"/>
+              <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6"/>
+              <text x="110" y="52" fontFamily="'Playfair Display',serif" fontSize="10" fill="#b89a6e" textAnchor="middle" letterSpacing="3">MEMORIES</text>
+              <text x="110" y="64" fontFamily="serif" fontSize="6" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
+              <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5"/>
+              <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5"/>
+              <circle cx="60" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4"/><circle cx="60" cy="93" r="2.5" fill="#b89a6e"/>
+              <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4"/><circle cx="160" cy="93" r="2.5" fill="#b89a6e"/>
+            </svg>
+          </div>
+          
+          <div onClick={() => setPhase('feedback')} style={{
+            fontSize:'clamp(7px,1.2vw,9px)',color:'rgba(74,63,48,.2)',textTransform:'uppercase',letterSpacing:'.2em',cursor:'pointer',
+          }}>Skip</div>
+        </div>
+ 
+        {/* ═══ FEEDBACK SCREEN ═══ */}
+        <div style={{
+          position:'fixed',inset:0,zIndex:phase==='feedback'?50:0,
+          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+          background:'radial-gradient(ellipse at 50% 30%,#F5EFE7,#E8DDD0)',
+          opacity:phase==='feedback'?1:0,pointerEvents:phase==='feedback'?'auto':'none',
+          transition:'opacity .8s ease',
+        }}>
+          <div style={{
+            background:'rgba(255,252,245,.7)',backdropFilter:'blur(8px)',
+            border:'1px solid rgba(184,154,110,.18)',borderRadius:'18px',
+            padding:'clamp(16px,3vw,28px)',maxWidth:'340px',width:'90%',
+            boxShadow:'0 12px 28px -6px rgba(0,0,0,.06)',
+            animation:'mj-fadeIn .8s ease',
+          }}>
+            {!fbSent ? (<>
+              <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,18px)',color:'#3c3326',textAlign:'center',marginBottom:'4px' }}>How Did We Do?</div>
+              <div style={{ color:'#a88d66',fontSize:'clamp(8px,1.4vw,10px)',textAlign:'center',marginBottom:'12px',letterSpacing:'.1em' }}>Your voice means everything</div>
+              <div style={{ display:'flex',justifyContent:'center',gap:'6px',marginBottom:'10px' }}>
+                {[1,2,3,4,5].map(n => (
+                  <span key={n} onClick={() => setRating(n)} style={{
+                    fontSize:'1.3rem',cursor:'pointer',color:n <= rating ? '#C6A97E' : 'rgba(60,51,38,.08)',transition:'all .12s',
+                  }}>&#9733;</span>
+                ))}
+              </div>
+              <input placeholder="Your name (optional)" value={fbName} onChange={e => setFbName(e.target.value)} style={{
+                width:'100%',padding:'7px 10px',background:'rgba(255,255,255,.4)',border:'1px solid rgba(184,154,110,.25)',
+                borderRadius:'10px',fontSize:'.7rem',marginBottom:'6px',outline:'none',fontFamily:'inherit',color:'#2e2a24',
+              }} />
+              <textarea placeholder="Leave a message of love..." value={fbComment} onChange={e => setFbComment(e.target.value)} style={{
+                width:'100%',padding:'7px 10px',background:'rgba(255,255,255,.4)',border:'1px solid rgba(184,154,110,.25)',
+                borderRadius:'10px',fontSize:'.7rem',marginBottom:'8px',outline:'none',fontFamily:'inherit',color:'#2e2a24',resize:'none',height:'55px',
+              }} />
+              <button disabled={fbLoading} onClick={submitFb} style={{
+                width:'100%',padding:'7px',background:'linear-gradient(135deg,#b89a6e,#C6A97E)',border:'none',
+                borderRadius:'24px',color:'#2e2a24',fontWeight:600,fontSize:'.7rem',cursor:'pointer',fontFamily:'inherit',
+                opacity:fbLoading?.35:1,
+              }}>{fbLoading ? 'Sending...' : 'Send Love'}</button>
+            </>) : (
+              <div style={{ textAlign:'center',animation:'mj-fadeIn .6s ease' }}>
+                <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,18px)',color:'#b89a6e',marginBottom:'4px' }}>Thank You</div>
+                <div style={{ color:'#6b5a48',fontSize:'.65rem' }}>Your message has been received with love.</div>
+              </div>
+            )}
+          </div>
         </div>
  
         {/* ── TV Modal (smaller) ── */}
