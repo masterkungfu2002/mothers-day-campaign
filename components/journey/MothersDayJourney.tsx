@@ -78,6 +78,29 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const [fbName, setFbName] = useState('');
   const [fbComment, setFbComment] = useState('');
   const [fbLoading, setFbLoading] = useState(false);
+
+  // Preload tất cả ảnh khi mount — fix delay cold cache
+  useEffect(() => {
+    if (!photos?.length) return;
+    photos.forEach((p) => {
+      const img = new window.Image();
+      img.src = p.photo_url;
+    });
+  }, [photos]);
+
+  // Warm CDN cho 2 ảnh kế tiếp
+  useEffect(() => {
+    const next = [photos[currentPage + 1], photos[currentPage + 2]].filter(Boolean);
+    const links: HTMLLinkElement[] = next.map((p) => {
+      const l = document.createElement('link');
+      l.rel = 'preload';
+      l.as = 'image';
+      l.href = p.photo_url;
+      document.head.appendChild(l);
+      return l;
+    });
+    return () => links.forEach((l) => l.remove());
+  }, [currentPage, photos]);
  
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
