@@ -1,10 +1,16 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
-import MothersDayJourney from '@/components/journey/MothersDayJourney';
+import { MothersDayJourney } from '@/components/journey/MothersDayJourney';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function AlbumPage({ params }: { params: { id: string } }) {
+export const dynamic = 'force-dynamic';
+
+export default async function AlbumPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -20,12 +26,9 @@ export default async function AlbumPage({ params }: { params: { id: string } }) 
     .single();
 
   if (error || !album) {
-    console.error('Album query error:', error);
+    console.error('[album page] error:', error, 'id:', id, 'col:', col);
     notFound();
   }
 
-  // Cột `photos` là jsonb → đã là array sẵn
-  const photos = Array.isArray(album.photos) ? album.photos : [];
-
-  return <MothersDayJourney album={album} photos={photos} />;
+  return <MothersDayJourney album={album} />;
 }
