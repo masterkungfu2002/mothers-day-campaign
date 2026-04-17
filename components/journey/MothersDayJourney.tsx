@@ -147,6 +147,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const autoTimerRef = useRef<any>(null);
   const openLockRef = useRef(false);
   const introTapLockRef = useRef(false);
+  const tvOpenRef = useRef(false);
 
   /* Pages in FlipBook = photos + back cover (NO cover) */
   const totalPages = useMemo(() => {
@@ -274,6 +275,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
     }
   }, [phase, bookState]);
 
+  useEffect(() => {
+    if (phase === 'cassette') setCassetteEject(false);
+    if (phase !== 'tv') tvOpenRef.current = false;
+  }, [phase]);
+
   const openBook = useCallback(() => {
     if (bookState !== 'closed') return;
     if (openLockRef.current) return;
@@ -283,7 +289,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setBookState('opening');
     setTimeout(() => {
       setBookState('open');
-    }, 620);
+    }, 720);
   }, [bookState]);
 
   const onFlip = useCallback((e: any) => {
@@ -324,25 +330,45 @@ export function MothersDayJourney({ album }: { album: Album }) {
     return () => document.removeEventListener('keydown', h);
   }, [phase, bookState, introStep, openBook, handleIntroTap]);
 
-  const openTV = () => {
+  const openTV = useCallback(() => {
+    if (phase !== 'cassette' || tvOpenRef.current) return;
+    tvOpenRef.current = true;
+
     setCassetteEject(true);
-    setTimeout(() => {
-      setPhase('tv');
-      setShowTV(true); setTvStatic(true); setTvLed(false); setVideoEnded(false);
-      setTimeout(() => {
-        setTvStatic(false); setTvLed(true);
-        if (videoUrl) {
-          if (isYT(videoUrl)) {
-            const f = iRef.current;
-            if (f) { f.src = `https://www.youtube-nocookie.com/embed/${ytId(videoUrl)}?autoplay=1&controls=1&rel=0`; f.style.display = 'block'; }
-          } else {
-            const v = vRef.current;
-            if (v) { v.src = resolveUrl(videoUrl); v.muted = false; v.play().catch(() => { v.muted = true; v.play(); }); }
+    setPhase('tv');
+    setShowTV(true);
+    setTvStatic(true);
+    setTvLed(false);
+    setVideoEnded(false);
+
+    if (videoUrl) {
+      if (isYT(videoUrl)) {
+        const f = iRef.current;
+        if (f) {
+          f.src = `https://www.youtube-nocookie.com/embed/${ytId(videoUrl)}?autoplay=1&controls=1&rel=0&playsinline=1&modestbranding=1`;
+          f.style.display = 'block';
+        }
+      } else {
+        const v = vRef.current;
+        if (v) {
+          v.src = resolveUrl(videoUrl);
+          v.load();
+          const playPromise = v.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {
+              v.muted = true;
+              v.play().catch(() => {});
+            });
           }
         }
-      }, 700);
-    }, 500);
-  };
+      }
+    }
+
+    window.setTimeout(() => {
+      setTvStatic(false);
+      setTvLed(true);
+    }, 260);
+  }, [phase, videoUrl]);
 
   const onVideoEnded = () => {
     setVideoEnded(true);
@@ -351,6 +377,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   const closeToEnding = () => {
     clearTimeout(autoTimerRef.current);
+    tvOpenRef.current = false;
+    setCassetteEject(false);
     setShowTV(false); setTvStatic(true); setTvLed(false);
     if (vRef.current) { vRef.current.pause(); vRef.current.src = ''; }
     if (iRef.current) { iRef.current.src = ''; iRef.current.style.display = 'none'; }
@@ -482,8 +510,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
         
         .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
         .mj-flipbook-wrap{animation:mj-flipbookReveal .18s ease both}
-        .mj-closedbook{animation:mj-glow 4s ease-in-out infinite}
-        .mj-closedbook:hover{transform:translateY(-4px) scale(1.01);transition:transform .35s ease}
+        .mj-closedbook{animation:mj-glow 4s ease-in-out infinite;transition:transform .35s ease, box-shadow .35s ease}
+        .mj-closedbook:hover{transform:translateX(-50%) translateY(-4px) scale(1.01)}
         .mj-cover-rotating{
           transform-origin:left center;
           transform-style:preserve-3d;
@@ -654,9 +682,16 @@ export function MothersDayJourney({ album }: { album: Album }) {
             </div>
           )}
 
-          {/* FlipBook mounts only after cover animation finishes */}
-          {bookState === 'open' && FlipBookComp && (
-            <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
+          {/* Pre-mount FlipBook while closed to eliminate white paint gap */}
+          {(phase === 'book' || phase === 'bookEnd') && FlipBookComp && (
+            <div className="mj-flipbook-wrap" style={{
+              position: 'relative',
+              opacity: bookState === 'open' ? 1 : 0,
+              visibility: bookState === 'open' ? 'visible' : 'hidden',
+              pointerEvents: bookState === 'open' ? 'auto' : 'none',
+              height: bookState === 'open' ? 'auto' : 0,
+              overflow: 'hidden',
+            }}>
               <FlipBookComp
                 ref={flipRef}
                 width={dims.w}
@@ -747,8 +782,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
             <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
               <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
                 <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
-                <video ref={vRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2 }} playsInline controls onEnded={onVideoEnded} />
-                <iframe ref={iRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2, border: 'none', display: 'none' }} allow="autoplay" title="Video" />
+                <video ref={vRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2 }} playsInline preload="auto" controls onEnded={onVideoEnded} />
+                <iframe ref={iRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2, border: 'none', display: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" title="Video" />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
@@ -758,8 +793,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
             <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: C.text, letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
             <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#724933', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
           </div>
-          {(videoEnded || !videoUrl) && (
-            <button onClick={closeToEnding} style={continueBtn}>Continue</button>
+          {phase === 'tv' && (
+            <button onClick={closeToEnding} style={continueBtn}>{videoEnded || !videoUrl ? 'Continue' : 'Skip'}</button>
           )}
         </div>
 
