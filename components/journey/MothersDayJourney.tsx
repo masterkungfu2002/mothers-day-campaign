@@ -82,6 +82,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
   const txRef = useRef(0);
+  const flipDirRef = useRef<'fwd' | 'back'>('fwd');
  
   /* ═══ Preload ═══ */
   useEffect(() => {
@@ -117,6 +118,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     if (animating) return;
     const t = Math.max(0, Math.min(numLeaves, target));
     if (t === spread) return;
+    flipDirRef.current = t > spread ? 'fwd' : 'back';    
     setAnimating(true);
     playFlip();
     setSpread(t);
@@ -148,12 +150,15 @@ export function MothersDayJourney({ album }: { album: Album }) {
  
   /* ═══ Book click ═══ */
   const onBookClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (spread === numLeaves && !animating) {
+      setPhase(videoUrl ? 'cassette' : 'feedback');
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     if (x > rect.width / 2) goTo(spread + 1);
     else goTo(spread - 1);
   };
- 
   /* ═══ TV ═══ */
   const openTV = () => {
     setCassetteEject(true);
@@ -286,13 +291,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
               </div>
  
               {/* Spine */}
-              <div style={{ position:'absolute',left:'50%',top:0,transform:'translateX(-50%)',width:'6px',height:'100%',background:'linear-gradient(to right,#7a6040,#c9a97a 35%,#c9a97a 65%,#7a6040)',zIndex:200,boxShadow:'0 0 12px rgba(0,0,0,.4)' }} />
+              <div style={{ position:'absolute',left:'50%',top:0,transform:'translateX(-50%)',width:'6px',height:'100%',background:'linear-gradient(to right,#7a6040,#c9a97a 35%,#c9a97a 65%,#7a6040)',zIndex:2,boxShadow:'0 0 12px rgba(0,0,0,.4)' }} />
  
               {/* ═══ LEAVES ═══ */}
               {Array.from({ length: numLeaves }, (_, i) => {
                 const isFlipped = i < spread;
-                const zIdx = animating && ((spread > 0 && i === spread - 1) || i === spread)
-                  ? numLeaves * 10
+                const flippingIdx = flipDirRef.current === 'fwd' ? spread - 1 : spread;
+                const zIdx = animating && i === flippingIdx
+                  ? 9999
                   : getLeafZ(i);
  
                 return (
