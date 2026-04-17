@@ -1,24 +1,36 @@
 'use client';
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import type { Album, AlbumPhoto } from '@/lib/types';
- 
+import { useEffect, useRef, useState, useCallback, useMemo, forwardRef } from 'react';
+import type { Album } from '@/lib/types';
+
 /*
-  Architecture: Leaf-based flipbook (proven working from album-flip.html)
-  
-  Each "leaf" = 1 physical page that flips from right → left
-  - leaf.front = right-side content (visible before flip)
-  - leaf.back  = left-side content (visible after flip)
-  
-  Leaf 0: front=COVER,        back=caption[0]
-  Leaf 1: front=photo[0],     back=caption[1]
-  Leaf 2: front=photo[1],     back=caption[2]
-  ...
-  Leaf N: front=photo[N-1],   back=BACK_COVER
-  
-  When you flip leaf 0: cover goes left, revealing photo[0] on right + caption[0] on left
+  ═══════════════════════════════════════════════════════════════
+  MEMORA — MothersDayJourney  [v10]
+  ═══════════════════════════════════════════════════════════════
+  Fixes from v9:
+  1. Cover NO LONGER in FlipBook → no double-cover "sticky" issue
+  2. New color palette: #FCF9F2 bg, #F3EDE3 pages, #724933 text
+  3. New font system: Sans-serif outside, Caveat inside pages
+  ═══════════════════════════════════════════════════════════════
 */
- 
-/* ═══ Helper ═══ */
+
+/* ── COLOR TOKENS ── */
+const C = {
+  bg:       '#FFFFFF',  // Scene background
+  page:     '#FFFFFF',  // Book page color
+  text:     '#724933',  // UI text (TV, buttons, tooltips)
+  textSoft: 'rgba(114,73,51,.65)',
+  textFade: 'rgba(114,73,51,.4)',
+  cover:    '#5c1f17',  // Book cover (burgundy)
+  gold:     '#D4B483',  // Cover accents
+} as const;
+
+/* ── FONT TOKENS ── */
+const F = {
+  sans: "'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+  hand: "'Caveat', cursive",
+  serif: "'Cormorant Garamond', serif",
+} as const;
+
 function resolveUrl(url: string): string {
   if (!url) return '';
   const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -26,16 +38,14 @@ function resolveUrl(url: string): string {
 }
 function isYT(u: string) { return /youtu\.?be/.test(u); }
 function ytId(u: string) { return u.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1] || ''; }
- 
-/* Get caption text — try every possible field name */
+
 function getCaptionText(photo: any): string {
-  return photo?.caption || photo?.description || photo?.text || photo?.message || photo?.content || 'A cherished memory';
+  return photo?.caption || photo?.description || photo?.text || photo?.message || photo?.content || '';
 }
 function getCaptionTitle(photo: any): string {
   return photo?.title || photo?.name || photo?.heading || '';
 }
- 
-/* ═══ Audio ═══ */
+
 let _ctx: AudioContext | null = null;
 let _ok = false;
 async function initAudio() {
@@ -51,59 +61,172 @@ function playFlip() {
     o.start(); o.stop(n + 0.1);
   } catch {}
 }
- 
-/* ═══════════════════════════════════════════════════
-   MAIN COMPONENT
-   ═══════════════════════════════════════════════════ */
+
+const FrameCorner = ({ rotate = 0 }: { rotate?: number }) => (
+  <svg width="36" height="36" viewBox="0 0 60 60" style={{ transform: `rotate(${rotate}deg)`, position: 'absolute', pointerEvents: 'none' }}>
+    <path d="M2 30 Q2 2 30 2 M8 30 Q8 8 30 8 M2 12 Q5 5 12 2 M8 16 Q11 11 16 8" stroke="#c9a97a" strokeWidth=".9" fill="none" opacity=".7"/>
+    <circle cx="6" cy="6" r="1.5" fill="#b89a6e" opacity=".6"/>
+    <path d="M14 4 Q18 6 16 10 Q12 8 14 4" fill="#c9a97a" opacity=".5"/>
+    <path d="M4 14 Q6 18 10 16 Q8 12 4 14" fill="#c9a97a" opacity=".5"/>
+  </svg>
+);
+
+const BookPage = forwardRef<HTMLDivElement, { children: React.ReactNode; isBack?: boolean; isLeft?: boolean }>(
+  ({ children, isBack, isLeft }, ref) => (
+    <div
+      ref={ref}
+      className="mj-page"
+      data-density={isBack ? 'hard' : 'soft'}
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundColor: isBack ? C.cover : C.page,
+        backgroundImage: isBack
+          ? `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`
+          : 'none',
+      }}
+    >
+      {!isBack && (
+        <>
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.03) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.04) 0%, transparent 40%)`,
+          }} />
+          <div style={{
+            position: 'absolute', top: 0, bottom: 0,
+            [isLeft ? 'right' : 'left']: 0,
+            width: '20px',
+            background: isLeft
+              ? 'linear-gradient(to right, transparent, rgba(101,67,33,.15))'
+              : 'linear-gradient(to left, transparent, rgba(101,67,33,.15))',
+            pointerEvents: 'none',
+          }} />
+        </>
+      )}
+      {children}
+    </div>
+  )
+);
+BookPage.displayName = 'BookPage';
+
+/* ══════════════════════════════════════════════════════════ */
 export function MothersDayJourney({ album }: { album: Album }) {
   const photos = album.photos || [];
   const videoUrl = album.video_url || '';
   const recipient = album.recipient_name || 'Mom';
   const year = new Date(album.created_at).getFullYear().toString();
- 
+
   const imageUrls = useMemo(() => photos.map(p => resolveUrl(p.url || '')), [photos]);
-  const numLeaves = photos.length + 1; // +1 for cover leaf
- 
+
+  type Phase = 'loading' | 'intro' | 'book' | 'bookEnd' | 'cassette' | 'tv' | 'ending';
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [introStep, setIntroStep] = useState(0);
+
   const [loaded, setLoaded] = useState(false);
   const [loadPct, setLoadPct] = useState(0);
-  const [spread, setSpread] = useState(0); // which leaf we're "on" (0 = cover showing)
-  const [animating, setAnimating] = useState(false);
+
+  const [FlipBookComp, setFlipBookComp] = useState<any>(null);
+  const [bookState, setBookState] = useState<'closed' | 'opening' | 'open'>('closed');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [dims, setDims] = useState({ w: 320, h: 440 });
+  const [isMobile, setIsMobile] = useState(false);
+
   const [showTV, setShowTV] = useState(false);
   const [tvStatic, setTvStatic] = useState(true);
   const [tvLed, setTvLed] = useState(false);
-  const [phase, setPhase] = useState<'book' | 'cassette' | 'feedback'>('book');
+  const [videoEnded, setVideoEnded] = useState(false);
   const [cassetteEject, setCassetteEject] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [fbSent, setFbSent] = useState(false);
-  const [fbName, setFbName] = useState('');
-  const [fbComment, setFbComment] = useState('');
-  const [fbLoading, setFbLoading] = useState(false);
- 
+
+  const [tooltip, setTooltip] = useState<string | null>(null);
+
+  const flipRef = useRef<any>(null);
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
-  const txRef = useRef(0);
-  const flipDirRef = useRef<'fwd' | 'back'>('fwd');
- 
-  /* ═══ Preload ═══ */
+  const autoTimerRef = useRef<any>(null);
+  const openLockRef = useRef(false);
+  const introTapLockRef = useRef(false);
+
+  /* Pages in FlipBook = photos + back cover (NO cover) */
+  const totalPages = useMemo(() => {
+    let count = photos.length + 1; // photos + back
+    if (count % 2 !== 0) count++;
+    return count;
+  }, [photos.length]);
+
+  useEffect(() => {
+    import('react-pageflip').then(mod => setFlipBookComp(() => mod.default)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const update = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const mobile = vw < 768;
+      const landscape = vw > vh;
+      setIsMobile(mobile);
+
+      let pw: number, ph: number;
+      if (mobile) {
+        if (landscape) {
+          const maxBookW = vw * 0.7;
+          const maxBookH = vh * 0.72;
+          pw = maxBookW / 2;
+          ph = pw * 1.32;
+          if (ph > maxBookH) { ph = maxBookH; pw = ph / 1.32; }
+        } else {
+          const maxBookW = vw * 0.92;
+          const maxBookH = vh * 0.6;
+          pw = maxBookW / 2;
+          ph = pw * 1.4;
+          if (ph > maxBookH) { ph = maxBookH; pw = ph / 1.4; }
+        }
+      } else {
+        const maxBookW = Math.min(vw * 0.72, 920);
+        const maxBookH = vh * 0.78;
+        pw = maxBookW / 2;
+        ph = pw * 1.34;
+        if (ph > maxBookH) { ph = maxBookH; pw = ph / 1.34; }
+      }
+      setDims({ w: Math.round(pw), h: Math.round(ph) });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+
   useEffect(() => {
     const urls = imageUrls.filter(Boolean);
     if (!urls.length) { setLoadPct(100); setLoaded(true); return; }
+    const critical = urls.slice(0, 3);
+    const rest = urls.slice(3);
     let done = 0;
-    Promise.all(urls.map(u => new Promise<void>(r => {
+    Promise.all(critical.map(u => new Promise<void>(r => {
       const img = new Image();
-      img.onload = img.onerror = () => { done++; setLoadPct(Math.round((done / urls.length) * 100)); r(); };
+      img.decoding = 'async';
+      img.onload = img.onerror = () => { done++; setLoadPct(Math.round((done / critical.length) * 100)); r(); };
       img.src = u;
-    }))).then(() => setTimeout(() => setLoaded(true), 300));
+    }))).then(() => {
+      setTimeout(() => setLoaded(true), 300);
+      const idle = (cb: () => void) =>
+        typeof window !== 'undefined' && (window as any).requestIdleCallback
+          ? (window as any).requestIdleCallback(cb)
+          : setTimeout(cb, 500);
+      idle(() => rest.forEach(u => { const img = new Image(); img.decoding = 'async'; img.src = u; }));
+    });
   }, [imageUrls]);
- 
-  /* ═══ Audio init ═══ */
+
   useEffect(() => {
     const h = () => { initAudio(); document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
     document.addEventListener('click', h); document.addEventListener('touchstart', h);
     return () => { document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
   }, []);
- 
-  /* ═══ Music ═══ */
+
   useEffect(() => {
     const mu = (album as any).background_music_url;
     if (!mu) return;
@@ -112,58 +235,100 @@ export function MothersDayJourney({ album }: { album: Album }) {
     document.addEventListener('click', p); document.addEventListener('touchstart', p);
     return () => { a.pause(); a.src = ''; document.removeEventListener('click', p); document.removeEventListener('touchstart', p); };
   }, [album]);
- 
-  /* ═══ Navigate ═══ */
-  const goTo = useCallback((target: number) => {
-    if (animating) return;
-    const t = Math.max(0, Math.min(numLeaves, target));
-    if (t === spread) return;
-    flipDirRef.current = t > spread ? 'fwd' : 'back';    
-    setAnimating(true);
+
+  useEffect(() => {
+    if (loaded && phase === 'loading') {
+      setTimeout(() => setPhase('intro'), 500);
+    }
+  }, [loaded, phase]);
+
+  useEffect(() => {
+    if (phase !== 'intro') return;
+    const t1 = setTimeout(() => setIntroStep(1), 600);
+    const t2 = setTimeout(() => setIntroStep(2), 3200);
+    const t3 = setTimeout(() => setIntroStep(3), 7000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [phase]);
+
+  const handleIntroTap = useCallback(() => {
+    if (phase !== 'intro' || introStep < 3) return;
+    if (introTapLockRef.current) return;
+    introTapLockRef.current = true;
+    setPhase('book');
+  }, [phase, introStep]);
+
+  useEffect(() => {
+    let msg: string | null = null;
+    let delay = 500;
+    if (phase === 'book' && bookState === 'closed') msg = '✨ Tap the book to open';
+    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or use arrows to turn pages';
+    else if (phase === 'cassette') msg = '🎬 Tap the cassette to watch';
+    else if (phase === 'tv') msg = '📺 Enjoy the video';
+
+    if (msg) {
+      const showT = setTimeout(() => setTooltip(msg), delay);
+      const hideT = setTimeout(() => setTooltip(null), delay + 3500);
+      return () => { clearTimeout(showT); clearTimeout(hideT); };
+    } else {
+      setTooltip(null);
+    }
+  }, [phase, bookState]);
+
+  const openBook = useCallback(() => {
+    if (bookState !== 'closed') return;
+    if (openLockRef.current) return;
+    openLockRef.current = true;
+    initAudio();
     playFlip();
-    setSpread(t);
+    setBookState('opening');
     setTimeout(() => {
-      setAnimating(false);
-      // Auto-transition to cassette/feedback when reaching the end
-      if (t === numLeaves) {
-        setTimeout(() => setPhase(videoUrl ? 'cassette' : 'feedback'), 600);
-      }
-    }, 950);
-  }, [animating, spread, numLeaves]);
- 
-  /* ═══ Keyboard ═══ */
+      setBookState('open');
+    }, 620);
+  }, [bookState]);
+
+  const onFlip = useCallback((e: any) => {
+    playFlip();
+    const page = e.data;
+    setCurrentPage(page);
+    if (page >= totalPages - 2 && phase === 'book') {
+      setPhase('bookEnd');
+    }
+  }, [totalPages, phase]);
+
+  const flipPrev = () => { try { flipRef.current?.pageFlip()?.flipPrev(); } catch {} };
+  const flipNext = () => { try { flipRef.current?.pageFlip()?.flipNext(); } catch {} };
+
+  useEffect(() => {
+    if (phase === 'bookEnd') {
+      autoTimerRef.current = setTimeout(() => goToCassette(), 8000);
+      return () => clearTimeout(autoTimerRef.current);
+    }
+  }, [phase]);
+
+  const goToCassette = () => {
+    clearTimeout(autoTimerRef.current);
+    if (videoUrl) setPhase('cassette');
+    else setPhase('ending');
+  };
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goTo(spread + 1);
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goTo(spread - 1);
+      if (phase === 'intro' && introStep >= 3 && (e.key === 'Enter' || e.key === ' ')) { handleIntroTap(); return; }
+      if (phase === 'book' && bookState === 'closed' && (e.key === 'Enter' || e.key === ' ')) { openBook(); return; }
+      if (phase === 'book' && bookState === 'open') {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') flipNext();
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') flipPrev();
+      }
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [goTo, spread]);
- 
-  /* ═══ Touch swipe ═══ */
-  const onTS = (e: React.TouchEvent) => { txRef.current = e.touches[0].clientX; };
-  const onTE = (e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - txRef.current;
-    if (Math.abs(dx) > 48) goTo(spread + (dx < 0 ? 1 : -1));
-  };
- 
-  /* ═══ Book click ═══ */
-  const onBookClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (spread === numLeaves && !animating) {
-      setPhase(videoUrl ? 'cassette' : 'feedback');
-      return;
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    if (x > rect.width / 2) goTo(spread + 1);
-    else goTo(spread - 1);
-  };
-  /* ═══ TV ═══ */
+  }, [phase, bookState, introStep, openBook, handleIntroTap]);
+
   const openTV = () => {
     setCassetteEject(true);
     setTimeout(() => {
-      setShowTV(true); setTvStatic(true); setTvLed(false);
+      setPhase('tv');
+      setShowTV(true); setTvStatic(true); setTvLed(false); setVideoEnded(false);
       setTimeout(() => {
         setTvStatic(false); setTvLed(true);
         if (videoUrl) {
@@ -178,398 +343,508 @@ export function MothersDayJourney({ album }: { album: Album }) {
       }, 700);
     }, 500);
   };
-  const closeTV = () => {
+
+  const onVideoEnded = () => {
+    setVideoEnded(true);
+    autoTimerRef.current = setTimeout(() => closeToEnding(), 5000);
+  };
+
+  const closeToEnding = () => {
+    clearTimeout(autoTimerRef.current);
     setShowTV(false); setTvStatic(true); setTvLed(false);
     if (vRef.current) { vRef.current.pause(); vRef.current.src = ''; }
     if (iRef.current) { iRef.current.src = ''; iRef.current.style.display = 'none'; }
-    setPhase('feedback');
+    setPhase('ending');
   };
- 
-  /* ═══ Feedback ═══ */
-  const submitFb = async () => {
-    if (!rating) { alert('Please select a rating'); return; }
-    setFbLoading(true);
-    try {
-      const r = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ album_id: album.id, rating, comment: fbComment.trim() || (fbName ? `From ${fbName}` : 'Sent with love') }) });
-      if (!r.ok) throw new Error();
-      setFbSent(true);
-    } catch { alert('Could not send. Please try again.'); }
-    finally { setFbLoading(false); }
-  };
- 
-  /* ═══ Z-index for leaves ═══ */
-  const getLeafZ = (i: number) => {
-    if (i < spread) return i + 1;           // flipped leaves: most recent on top
-    return numLeaves * 2 - i;               // unflipped: current on top
-  };
- 
-  /* ═══ Page indicator ═══ */
-  const pageText = spread === 0 ? 'Cover' : spread === numLeaves ? 'End' : `${spread} / ${photos.length}`;
- 
-  /* ═════════════════════════════════════
-     INLINE STYLES (no CSS class conflicts!)
-     ═════════════════════════════════════ */
- 
+
+  const pageLabel = currentPage >= totalPages - 1 ? 'End'
+    : `${currentPage + 1} / ${photos.length}`;
+
+  /* ─── Pages: photos + back (NO cover) ─── */
+  const renderPages = useMemo(() => {
+    const pages: React.ReactNode[] = [];
+
+    photos.forEach((photo, i) => {
+      const title = getCaptionTitle(photo);
+      const caption = getCaptionText(photo);
+      const isLeftPage = i % 2 === 0; // first photo on left
+      const tiltAngle = i % 3 === 0 ? 0 : (i % 2 === 0 ? -1.2 : 1.4);
+
+      pages.push(
+        <BookPage key={`photo-${i}`} isLeft={isLeftPage}>
+          <div style={{
+            width: '100%', height: '100%',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            padding: 'clamp(20px,4vw,36px) clamp(18px,3.5vw,32px)',
+            position: 'relative',
+          }}>
+            <div style={{
+              position: 'relative',
+              width: '78%',
+              maxWidth: '300px',
+              aspectRatio: '4/5',
+              transform: `rotate(${tiltAngle}deg)`,
+              marginBottom: 'clamp(18px,3vw,28px)',
+              filter: 'drop-shadow(0 6px 14px rgba(80,50,20,.22)) drop-shadow(0 2px 4px rgba(80,50,20,.15))',
+            }}>
+              <div style={{
+                position: 'absolute', inset: 0,
+                background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 50%, #ffffff 100%)',
+                borderRadius: '4px',
+                padding: 'clamp(10px,2vw,16px)',
+                boxShadow: `inset 0 0 0 1px rgba(114,73,51,.12),inset 0 0 0 4px #ffffff,inset 0 0 0 5px rgba(114,73,51,.08)`,
+              }}>
+                <div style={{ position: 'absolute', top: '4px', left: '4px' }}><FrameCorner rotate={0} /></div>
+                <div style={{ position: 'absolute', top: '4px', right: '4px' }}><FrameCorner rotate={90} /></div>
+                <div style={{ position: 'absolute', bottom: '4px', right: '4px' }}><FrameCorner rotate={180} /></div>
+                <div style={{ position: 'absolute', bottom: '4px', left: '4px' }}><FrameCorner rotate={270} /></div>
+                <div style={{ width: '100%', height: '100%', background: '#ffffff', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(114,73,51,.10)' }}>
+                  <img src={imageUrls[i] || ''} alt="" decoding="async" draggable={false}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ width: '85%', textAlign: 'center', transform: `rotate(${tiltAngle * -0.3}deg)` }}>
+              {title && (
+                <div style={{ fontFamily: F.hand, fontSize: 'clamp(20px,3.8vw,28px)', color: '#3a2a1a', lineHeight: 1.2, marginBottom: '4px', fontWeight: 600 }}>{title}</div>
+              )}
+              {caption && (
+                <div style={{ fontFamily: F.hand, fontSize: 'clamp(15px,2.8vw,22px)', color: '#5a4530', lineHeight: 1.4, fontWeight: 400, maxHeight: '4em', overflow: 'hidden' }}>{caption}</div>
+              )}
+            </div>
+            <div style={{
+              position: 'absolute', bottom: 'clamp(10px,2vw,16px)',
+              [isLeftPage ? 'left' : 'right']: 'clamp(14px,2.5vw,22px)',
+              fontFamily: F.hand, fontSize: 'clamp(11px,1.8vw,14px)',
+              color: 'rgba(90,60,30,.4)', fontStyle: 'italic',
+            }}>{String(i + 1).padStart(2, '0')}</div>
+          </div>
+        </BookPage>
+      );
+    });
+
+    /* Back cover */
+    pages.push(
+      <BookPage key="back" isBack>
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%)` }} />
+        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px', position: 'relative' }}>
+          <div style={{ position: 'absolute', inset: '14px', border: `1px solid ${C.gold}66` }} />
+          <div style={{ fontFamily: F.hand, fontSize: 'clamp(20px,3.5vw,30px)', color: C.gold, opacity: .85 }}>with love</div>
+          <div style={{ width: '40px', height: '1px', background: C.gold, opacity: .35 }} />
+          <div style={{ fontFamily: F.sans, fontSize: 'clamp(8px,1.3vw,10px)', color: C.gold, letterSpacing: '5px', textTransform: 'uppercase', opacity: .6, fontWeight: 500 }}>Memora · {year}</div>
+        </div>
+      </BookPage>
+    );
+
+    /* Pad to even (also covers edge case of 1 photo) */
+    if (pages.length % 2 !== 0) {
+      pages.push(<BookPage key="pad"><div style={{ width: '100%', height: '100%', backgroundColor: C.page }} /></BookPage>);
+    }
+    return pages;
+  }, [photos, imageUrls, year]);
+
   return (
     <>
-      {/* ── Global styles (only layout, not caption content) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
-        .mj-root *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-        .mj-leaf{
-          position:absolute;top:0;left:var(--pw);
-          width:var(--pw);height:var(--ph);
-          transform-origin:left center;
-          transform-style:preserve-3d;
-          transition:transform .9s cubic-bezier(.77,0,.175,1);
-          will-change:transform;cursor:pointer;
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600;700&display=swap');
+        *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+        
+        /* Force solid bg on every pageflip layer */
+        .stf__wrapper{margin:0 auto!important}
+        .stf__parent{
+          box-shadow:0 50px 100px -25px rgba(60,30,15,.35),0 30px 60px -15px rgba(60,30,15,.25),0 0 0 1px rgba(60,30,15,.1)!important;
+          border-radius:3px!important;
         }
-        .mj-leaf.flipped{transform:rotateY(-180deg)}
-        .mj-lf,.mj-lb{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;overflow:hidden}
-        .mj-lb{transform:rotateY(180deg)}
-        .mj-lf::before{content:'';position:absolute;left:0;top:0;width:18px;height:100%;background:linear-gradient(to right,rgba(0,0,0,.1),transparent);z-index:1;pointer-events:none}
-        .mj-lb::after{content:'';position:absolute;right:0;top:0;width:18px;height:100%;background:linear-gradient(to left,rgba(0,0,0,.1),transparent);z-index:1;pointer-events:none}
-        .mj-lf{border-radius:0 3px 3px 0}
-        .mj-lb{border-radius:3px 0 0 3px}
-        @media(orientation:portrait){.mj-rotate{display:flex!important}.mj-main{display:none!important}}
-        @keyframes mj-hint{0%,100%{opacity:.2}50%{opacity:.7}}
+        .stf__block{background-color:${C.page}!important}
+        .mj-page{user-select:none;-webkit-user-select:none;opacity:1!important;-webkit-backface-visibility:hidden;backface-visibility:hidden}
+        .mj-page img{-webkit-user-drag:none}
+        .stf__item, .stf__item > div, .stf__block > div{background-color:${C.page}!important}
+        .mj-page[data-density="hard"]{background-color:${C.cover}!important}
+        .stf__item:last-child{background-color:${C.cover}!important}
+        
         @keyframes mj-spin{to{transform:rotate(360deg)}}
+        @keyframes mj-pulse{0%,100%{opacity:.4;transform:translateX(-50%) translateY(0)}50%{opacity:1;transform:translateX(-50%) translateY(-3px)}}
         @keyframes mj-eject{0%{transform:translateY(0) scale(1);opacity:1}30%{transform:translateY(-12px) scale(1.03)}100%{transform:translateY(40px) scale(.5);opacity:0}}
         @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes mj-fadeInSlow{from{opacity:0;transform:translateY(20px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes mj-bookEnter{from{opacity:0;transform:scale(.9) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
+        @keyframes mj-coverOpen{
+          0%{transform:translateX(-50%) rotateY(0deg);box-shadow:0 20px 40px -10px rgba(0,0,0,.4)}
+          100%{transform:translateX(-50%) rotateY(-172deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
+        }
+        @keyframes mj-flipbookReveal{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
+        @keyframes mj-tooltipIn{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(0)}}
+        @keyframes mj-glow{
+          0%,100%{box-shadow:0 30px 60px -15px rgba(60,30,15,.3)}
+          50%{box-shadow:0 30px 60px -15px rgba(60,30,15,.4),0 0 60px rgba(212,180,131,.3)}
+        }
+        
+        .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
+        .mj-flipbook-wrap{animation:mj-flipbookReveal .18s ease both}
+        .mj-closedbook{animation:mj-glow 4s ease-in-out infinite}
+        .mj-closedbook:hover{transform:translateY(-4px) scale(1.01);transition:transform .35s ease}
+        .mj-cover-rotating{
+          transform-origin:left center;
+          transform-style:preserve-3d;
+          -webkit-transform-style:preserve-3d;
+          animation:mj-coverOpen .72s cubic-bezier(.55,.18,.2,1) forwards;
+        }
+        .mj-tooltip{animation:mj-tooltipIn 3.5s ease forwards}
       `}} />
- 
-      {/* ── Rotate notice ── */}
-      <div className="mj-rotate" style={{ display:'none',position:'fixed',inset:0,zIndex:99999,background:'#F0E8DA',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'16px',fontFamily:"'Playfair Display',serif",color:'#8B7355',textAlign:'center' }}>
-        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="1.5" strokeLinecap="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
-        <p style={{ fontSize:'1rem',lineHeight:1.5,color:'#4a3f30' }}>Please rotate your phone<br/>to landscape mode</p>
-        <span style={{ fontSize:'.6rem',letterSpacing:'.3em',opacity:.5 }}>FOR THE BEST EXPERIENCE</span>
-      </div>
- 
-      {/* ── Hidden preload ── */}
-      <div style={{ position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',overflow:'hidden',opacity:0,pointerEvents:'none',visibility:'hidden' as any }} aria-hidden="true">
-        {imageUrls.map((u, i) => u ? <img key={i} src={u} alt="" /> : null)}
-      </div>
- 
-      <div className="mj-main mj-root" style={{ position:'fixed',inset:0,userSelect:'none',WebkitUserSelect:'none',fontFamily:"'Cormorant Garamond',serif",background:'#F0E8DA',color:'#2e2a24',overflow:'hidden' }}>
- 
-        {/* ── Loading ── */}
+
+      <div style={{
+        position: 'fixed', inset: 0,
+        fontFamily: F.sans, color: C.text, overflow: 'hidden',
+        background: C.bg,
+      }}>
+        {/* Subtle ambient lighting */}
         <div style={{
-          position:'fixed',inset:0,zIndex:999,background:'#F0E8DA',
-          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'14px',
-          transition:'opacity .6s,visibility .6s',
-          opacity:loaded?0:1,visibility:loaded?'hidden':'visible',pointerEvents:loaded?'none':'auto',
+          position: 'fixed', inset: 0, pointerEvents: 'none',
+          backgroundImage: `radial-gradient(circle at 30% 20%, rgba(255,240,220,.4) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(220,195,160,.2) 0%, transparent 55%)`,
+        }} />
+
+        {/* LOADING */}
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 999,
+          background: C.bg,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px',
+          transition: 'opacity .6s,visibility .6s',
+          opacity: phase === 'loading' ? 1 : 0,
+          visibility: phase === 'loading' ? 'visible' : 'hidden',
+          pointerEvents: phase === 'loading' ? 'auto' : 'none',
         }}>
-          <div style={{ width:'40px',height:'40px',border:'1.5px solid rgba(139,115,85,.15)',borderTopColor:'#8B7355',borderRadius:'50%',animation:'mj-spin .9s linear infinite' }} />
-          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'1.5rem',color:'#8B7355',fontWeight:300,letterSpacing:'.1em' }}>{loadPct}%</div>
-          <div style={{ fontSize:'.55rem',letterSpacing:'.3em',textTransform:'uppercase',color:'rgba(139,115,85,.4)' }}>Preparing your memories</div>
+          <div style={{ width: '40px', height: '40px', border: `1.5px solid ${C.text}33`, borderTopColor: C.text, borderRadius: '50%', animation: 'mj-spin .9s linear infinite' }} />
+          <div style={{ fontFamily: F.sans, fontSize: '1.1rem', color: C.text, fontWeight: 500, letterSpacing: '.02em' }}>{loadPct}%</div>
+          <div style={{ fontFamily: F.sans, fontSize: '.65rem', letterSpacing: '.3em', textTransform: 'uppercase', color: C.textSoft, fontWeight: 500 }}>Preparing your memories</div>
         </div>
- 
-        {/* ── Scene ── */}
-        <div style={{
-          position:'fixed',inset:0,display:'flex',flexDirection:'column',
-          alignItems:'center',justifyContent:'center',
-          gap:'clamp(12px,2.5vh,28px)',
-          background:'radial-gradient(ellipse 80% 60% at 50% 55%,#F5EFE7,#E8DDD0)',
-        }} onTouchStart={onTS} onTouchEnd={onTE}>
- 
-          {/* Book wrapper */}
-          <div style={{ position:'relative',perspective:'clamp(800px,250vw,3000px)',opacity:phase==='book'?1:0,transition:'opacity .6s',pointerEvents:phase==='book'?'auto':'none' }}>
-            <div onClick={onBookClick} style={{
-              position:'relative',
-              width:'calc(var(--pw) * 2)',height:'var(--ph)',
-              transformStyle:'preserve-3d',
-              // @ts-ignore
-              '--pw':'clamp(130px,30vw,340px)','--ph':'clamp(190px,45vw,460px)',
-            } as any}>
- 
-              {/* Book halves (paper stack background) */}
-              <div style={{ position:'absolute',top:0,left:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to right,#E8DDD0,#F5EFE7 6%)',borderRadius:'3px 0 0 3px',boxShadow:'-6px 0 28px -4px rgba(0,0,0,.55),-2px 0 8px rgba(0,0,0,.3)',pointerEvents:'none' }}>
-                <div style={{ position:'absolute',right:0,top:0,width:'20px',height:'100%',background:'linear-gradient(to right,transparent,rgba(0,0,0,.08))' }} />
-              </div>
-              <div style={{ position:'absolute',top:0,right:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to left,#E8DDD0,#F5EFE7 6%)',borderRadius:'0 3px 3px 0',boxShadow:'6px 0 28px -4px rgba(0,0,0,.55),2px 0 8px rgba(0,0,0,.3)',pointerEvents:'none' }}>
-                <div style={{ position:'absolute',left:0,top:0,width:'20px',height:'100%',background:'linear-gradient(to left,transparent,rgba(0,0,0,.08))' }} />
-              </div>
- 
-              {/* Spine */}
-              <div style={{ position:'absolute',left:'50%',top:0,transform:'translateX(-50%)',width:'6px',height:'100%',background:'linear-gradient(to right,#7a6040,#c9a97a 35%,#c9a97a 65%,#7a6040)',zIndex:2,boxShadow:'0 0 12px rgba(0,0,0,.4)' }} />
- 
-              {/* ═══ LEAVES ═══ */}
-              {Array.from({ length: numLeaves }, (_, i) => {
-                const isFlipped = i < spread;
-                const flippingIdx = flipDirRef.current === 'fwd' ? spread - 1 : spread;
-                const zIdx = animating && i === flippingIdx
-                  ? 9999
-                  : getLeafZ(i);
- 
-                return (
-                  <div key={i} className={`mj-leaf ${isFlipped ? 'flipped' : ''}`} style={{ zIndex: zIdx }}>
-                    {/* FRONT (right page) */}
-                    <div className="mj-lf">
-                      {i === 0 ? (
-                        /* ── COVER ── */
-                        <div style={{
-                          width:'100%',height:'100%',background:'#0B0B0B',
-                          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                          padding:'clamp(24px,5vw,48px)',textAlign:'center',position:'relative',overflow:'hidden',
-                        }}>
-                          <div style={{ position:'absolute',inset:'12px',border:'1px solid rgba(158,126,86,.3)',pointerEvents:'none' }} />
-                          <div style={{ position:'absolute',inset:'16px',border:'1px solid rgba(158,126,86,.12)',pointerEvents:'none' }} />
-                          <div style={{ fontSize:'clamp(9px,1.8vw,12px)',color:'#C6A97E',letterSpacing:'8px',marginBottom:'clamp(12px,2.5vw,20px)',opacity:.6 }}>
-                            &#10022; &nbsp; &#10022; &nbsp; &#10022;
-                          </div>
-                          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(16px,3.5vw,26px)',fontWeight:400,color:'#F5EFE7',lineHeight:1.45,marginBottom:'8px' }}>
-                            For the Most Wonderful<br/><span style={{ color:'#C6A97E',fontStyle:'italic' }}>{recipient}</span>
-                          </div>
-                          <div style={{ width:'28px',height:'1px',background:'#C6A97E',opacity:.5,margin:'clamp(12px,2.5vw,18px) auto' }} />
-                          <div style={{ fontSize:'clamp(8px,1.5vw,10px)',fontWeight:300,color:'#D4BA94',letterSpacing:'4px',textTransform:'uppercase' }}>
-                            Album of Memories
-                          </div>
-                          <div style={{ fontSize:'clamp(8px,1.4vw,10px)',color:'#9E7E56',letterSpacing:'3px',fontStyle:'italic',opacity:.7,marginTop:'clamp(12px,2.5vw,18px)' }}>
-                            Memoraa &middot; {year}
-                          </div>
-                        </div>
-                      ) : (
-                        /* ── PHOTO PAGE ── */
-                        <div style={{ width:'100%',height:'100%',background:'#111',position:'relative' }}>
-                          <img src={imageUrls[i - 1] || ''} alt="" style={{ width:'100%',height:'100%',objectFit:'contain',display:'block',background:'#111' }} />
-                          <div style={{ position:'absolute',bottom:0,left:0,right:0,height:'25%',pointerEvents:'none',background:'linear-gradient(to top,rgba(0,0,0,.3),transparent)' }} />
-                          <div style={{ position:'absolute',bottom:'clamp(8px,1.5vw,14px)',right:'clamp(10px,2vw,16px)',fontSize:'clamp(8px,1.4vw,10px)',color:'rgba(255,255,255,.4)',letterSpacing:'3px' }}>
-                            {String(i).padStart(2, '0')}
-                          </div>
-                        </div>
-                      )}
-                    </div>
- 
-                    {/* BACK (left page after flip) */}
-                    <div className="mj-lb">
-                      {i < photos.length ? (
-                        /* ── CAPTION PAGE — 100% inline styles ── */
-                        <div style={{
-                          width:'100%',height:'100%',
-                          background:'#F5EFE7',
-                          display:'flex',flexDirection:'column',
-                          justifyContent:'center',
-                          padding:'clamp(24px,5vw,48px) clamp(20px,4vw,40px)',
-                          position:'relative',
-                          fontFamily:"'Cormorant Garamond','Georgia',serif",
-                        }}>
-                          {/* Left accent line */}
-                          <div style={{
-                            position:'absolute',
-                            left:'clamp(14px,3vw,24px)',top:'clamp(14px,3vw,24px)',
-                            bottom:'clamp(14px,3vw,24px)',width:'1px',
-                            background:'linear-gradient(to bottom,transparent,#C6A97E,transparent)',
-                            opacity:.35,
-                          }} />
- 
-                          {/* Big number */}
-                          <div style={{
-                            fontFamily:"'Playfair Display',serif",
-                            fontSize:'clamp(36px,8vw,60px)',fontWeight:400,
-                            color:'#C6A97E',opacity:.1,lineHeight:1,marginBottom:'-6px',
-                          }}>
-                            {String(i + 1).padStart(2, '0')}
-                          </div>
- 
-                          {/* Title (if available) */}
-                          {getCaptionTitle(photos[i]) && (
-                            <div style={{
-                              fontFamily:"'Playfair Display',serif",
-                              fontSize:'clamp(13px,2.5vw,18px)',fontWeight:600,
-                              color:'#0B0B0B',lineHeight:1.5,
-                              marginBottom:'clamp(8px,2vw,14px)',
-                            }}>
-                              {getCaptionTitle(photos[i])}
-                            </div>
-                          )}
- 
-                          {/* Rule */}
-                          <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
- 
-                          {/* Caption text */}
-                          <div style={{
-                            fontSize:'clamp(11px,2.2vw,14.5px)',
-                            fontStyle:'italic',fontWeight:400,
-                            color:'#4a3f30',lineHeight:1.9,
-                            marginBottom:'clamp(8px,2vw,14px)',
-                            overflowY:'auto',maxHeight:'60%',
-                          }}>
-                            {getCaptionText(photos[i])}
-                          </div>
- 
-                          {/* Rule */}
-                          <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
- 
-                          {/* Year */}
-                          <div style={{
-                            fontSize:'clamp(7px,1.3vw,9px)',
-                            letterSpacing:'3px',textTransform:'uppercase',
-                            color:'#9E7E56',opacity:.6,
-                          }}>
-                            {year}
-                          </div>
-                        </div>
-                      ) : (
-                        /* ── BACK COVER ── */
-                        <div style={{ width:'100%',height:'100%',background:'#0B0B0B',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                          <div style={{ fontSize:'clamp(8px,1.5vw,10px)',color:'#C6A97E',letterSpacing:'6px',textTransform:'uppercase',opacity:.35 }}>
-                            Memoraa
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
- 
-            {/* Flip hint */}
-            {spread === 0 && (
-              <div style={{
-                position:'absolute',bottom:'clamp(6px,1.5vw,12px)',left:'50%',transform:'translateX(-50%)',
-                fontSize:'clamp(7px,1.3vw,9px)',color:'rgba(74,63,48,.35)',letterSpacing:'3px',textTransform:'uppercase',
-                pointerEvents:'none',whiteSpace:'nowrap',animation:'mj-hint 2.2s ease-in-out infinite',
-              }}>
-                tap to flip
-              </div>
-            )}
-          </div>
- 
-          {/* ── Navigation ── */}
-          <nav style={{ display:'flex',alignItems:'center',gap:'clamp(14px,3.5vw,28px)',opacity:phase==='book'?1:0,transition:'opacity .5s' }}>
-            <button disabled={spread === 0 || animating} onClick={() => goTo(spread - 1)} style={{
-              width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
-              border:'1px solid rgba(139,115,85,.25)',borderRadius:'50%',color:'#8B7355',
-              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
-              opacity:spread === 0 ? .15 : 1,transition:'all .2s',
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            </button>
- 
-            <div style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'clamp(9px,1.8vw,12px)',color:'#8B7355',letterSpacing:'3px',opacity:.5,minWidth:'60px',textAlign:'center' }}>
-              {pageText}
-            </div>
- 
-            <button disabled={spread === numLeaves || animating} onClick={() => goTo(spread + 1)} style={{
-              width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
-              border:'1px solid rgba(139,115,85,.25)',borderRadius:'50%',color:'#8B7355',
-              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
-              opacity:spread === numLeaves ? .15 : 1,transition:'all .2s',
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-          </nav>
+
+        {/* INTRO */}
+        <div
+          onClick={handleIntroTap}
+          onTouchEnd={(e) => { e.preventDefault(); handleIntroTap(); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 90,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            opacity: phase === 'intro' ? 1 : 0,
+            pointerEvents: phase === 'intro' ? 'auto' : 'none',
+            transition: 'opacity 1s ease',
+            padding: '40px 24px',
+            cursor: introStep >= 3 ? 'pointer' : 'default',
+          }}>
+          <div style={{
+            fontFamily: F.sans,
+            fontSize: 'clamp(42px,8vw,72px)',
+            color: C.text, fontWeight: 600, textAlign: 'center',
+            lineHeight: 1, marginBottom: 'clamp(20px,4vw,36px)',
+            opacity: introStep >= 1 ? 1 : 0,
+            transform: introStep >= 1 ? 'translateY(0)' : 'translateY(20px)',
+            transition: 'opacity 2s ease, transform 2s ease',
+            textShadow: '0 2px 8px rgba(114,73,51,.08)',
+          }}>For {recipient}</div>
+          <div style={{
+            fontFamily: F.sans, fontStyle: 'italic',
+            fontSize: 'clamp(15px,2.4vw,20px)', color: C.text, fontWeight: 400,
+            textAlign: 'center', maxWidth: '520px', lineHeight: 1.6,
+            opacity: introStep >= 2 ? .8 : 0,
+            transform: introStep >= 2 ? 'translateY(0)' : 'translateY(15px)',
+            transition: 'opacity 2s ease, transform 2s ease',
+          }}>"I made this from the moments<br />I never want us to lose."</div>
+          <div style={{
+            position: 'absolute', bottom: 'clamp(40px,8vh,80px)',
+            fontFamily: F.sans,
+            fontSize: 'clamp(9px,1.2vw,11px)', letterSpacing: '4px',
+            textTransform: 'uppercase', color: C.textSoft, fontWeight: 600,
+            opacity: introStep >= 3 ? 1 : 0, transition: 'opacity 1s ease',
+            animation: introStep >= 3 ? 'mj-pulse 1.8s ease-in-out infinite' : 'none',
+          }}>✨ Tap anywhere to continue</div>
         </div>
- 
-        {/* ═══ CASSETTE SCREEN ═══ */}
+
+        {/* BOOK */}
         <div style={{
-          position:'fixed',inset:0,zIndex:phase==='cassette'?50:0,
-          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'clamp(12px,2.5vh,24px)',
-          background:'radial-gradient(ellipse at 50% 45%,#F5EFE7,#E8DDD0)',
-          opacity:phase==='cassette'?1:0,pointerEvents:phase==='cassette'?'auto':'none',
-          transition:'opacity .8s ease',
+          position: 'fixed', inset: 0,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 'clamp(18px,3vh,32px)',
+          opacity: (phase === 'book' || phase === 'bookEnd') ? 1 : 0,
+          pointerEvents: (phase === 'book' || phase === 'bookEnd') ? 'auto' : 'none',
+          transition: 'opacity .6s', padding: '20px',
         }}>
-          <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,20px)',color:'#4a3f30',letterSpacing:'.04em' }}>One Last Surprise</div>
-          <div style={{ fontSize:'clamp(8px,1.4vw,10px)',letterSpacing:'.25em',color:'rgba(139,115,85,.5)',textTransform:'uppercase' }}>press play to watch</div>
-          
-          {/* Cassette tape SVG */}
-          <div onClick={openTV} style={{
-            cursor:'pointer',transition:'transform .3s',
-            animation:cassetteEject?'mj-eject .6s forwards':'none',
-          }}
-          onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.03) translateY(-3px)')}
-          onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
+
+          {/* CLOSED BOOK with cover opening */}
+          {bookState !== 'open' && (
+            <div style={{
+              position: 'relative',
+              width: dims.w * 2,
+              height: dims.h,
+              perspective: '2500px',
+              perspectiveOrigin: 'center center',
+            }}>
+              {/* Cover */}
+              <div
+                className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
+                onClick={() => { if (bookState === 'closed') openBook(); }}
+                onTouchEnd={(e) => { if (bookState === 'closed') { e.preventDefault(); openBook(); } }}
+                style={{
+                  position: 'absolute',
+                  left: '50%', top: 0,
+                  width: dims.w, height: dims.h,
+                  transform: 'translateX(-50%)',
+                  transformOrigin: 'left center',
+                  transformStyle: 'preserve-3d',
+                  WebkitTransformStyle: 'preserve-3d',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  cursor: bookState === 'closed' ? 'pointer' : 'default',
+                  zIndex: 10,
+                  willChange: 'transform',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  boxShadow: bookState === 'closed'
+                    ? '0 20px 40px -10px rgba(0,0,0,.35), inset 2px 0 6px rgba(0,0,0,.4)'
+                    : 'inset 2px 0 6px rgba(0,0,0,.4)',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transform: 'translateZ(1px)',
+                }}>
+                  <div style={{
+                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                    backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%),repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 1px, transparent 1px 4px)`,
+                  }} />
+                  <CoverFace recipient={recipient} year={year} />
+                </div>
+
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
+                  borderRadius: '4px',
+                  boxShadow: 'inset -2px 0 6px rgba(0,0,0,.35)',
+                  transform: 'rotateY(180deg) translateZ(1px)',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }} />
+
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: '10px',
+                  background: 'linear-gradient(to right, rgba(0,0,0,.5), transparent)',
+                  pointerEvents: 'none',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }} />
+              </div>
+
+              {/* Page stack peek */}
+              {bookState === 'closed' && (
+                <div style={{
+                  position: 'absolute',
+                  left: `calc(50% + ${dims.w / 2 - 3}px)`,
+                  top: '6px', bottom: '6px',
+                  width: '6px',
+                  background: 'linear-gradient(to right, #ffffff 0%, #f5f5f5 100%)',
+                  borderRadius: '0 2px 2px 0',
+                  boxShadow: '1px 0 3px rgba(0,0,0,.15)',
+                  zIndex: 5,
+                }} />
+              )}
+            </div>
+          )}
+
+          {/* FlipBook mounts only after cover animation finishes */}
+          {bookState === 'open' && FlipBookComp && (
+            <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
+              <FlipBookComp
+                ref={flipRef}
+                width={dims.w}
+                height={dims.h}
+                size="fixed"
+                minWidth={100}
+                maxWidth={500}
+                minHeight={150}
+                maxHeight={700}
+                showCover={false}
+                mobileScrollSupport={false}
+                useMouseEvents={true}
+                clickEventForward={true}
+                flippingTime={800}
+                drawShadow={true}
+                maxShadowOpacity={0.16}
+                showPageCorners={false}
+                disableFlipByClick={true}
+                usePortrait={false}
+                startZIndex={10}
+                autoSize={false}
+                onFlip={onFlip}
+                style={{}}
+                className=""
+                startPage={0}
+                swipeDistance={32}
+              >
+                {renderPages}
+              </FlipBookComp>
+            </div>
+          )}
+
+          {bookState === 'open' && phase === 'book' && (
+            <nav style={{
+              display: 'flex', alignItems: 'center', gap: 'clamp(16px,3.5vw,28px)',
+              marginTop: 'clamp(14px,2vh,22px)',
+              animation: 'mj-fadeIn .8s ease both',
+            }}>
+              <button onClick={flipPrev} style={navBtn(currentPage === 0)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <div style={{ fontFamily: F.sans, fontSize: 'clamp(11px,1.5vw,13px)', color: C.text, minWidth: '70px', textAlign: 'center', fontWeight: 500, letterSpacing: '.05em' }}>{pageLabel}</div>
+              <button onClick={flipNext} style={navBtn(currentPage >= totalPages - 2)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </nav>
+          )}
+
+          {phase === 'bookEnd' && (
+            <button onClick={goToCassette} style={continueBtn}>Continue</button>
+          )}
+        </div>
+
+        {/* CASSETTE */}
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: phase === 'cassette' ? 50 : 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px,2.5vh,24px)',
+          opacity: phase === 'cassette' ? 1 : 0, pointerEvents: phase === 'cassette' ? 'auto' : 'none',
+          transition: 'opacity .8s ease',
+        }}>
+          <div style={{ fontFamily: F.sans, fontSize: 'clamp(20px,3vw,28px)', color: C.text, fontWeight: 500, letterSpacing: '.02em' }}>One Last Surprise</div>
+          <div style={{ fontFamily: F.sans, fontSize: 'clamp(8px,1.2vw,10px)', letterSpacing: '.3em', color: C.textSoft, textTransform: 'uppercase', fontWeight: 500 }}>press play to watch</div>
+          <div
+            onClick={openTV}
+            onTouchEnd={(e) => { e.preventDefault(); openTV(); }}
+            style={{ cursor: 'pointer', transition: 'transform .3s', animation: cassetteEject ? 'mj-eject .6s forwards' : 'none' }}>
             <svg width="220" height="130" viewBox="0 0 220 130" fill="none">
-              <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8"/>
-              <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef"/>
-              <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6"/>
-              <text x="110" y="52" fontFamily="'Playfair Display',serif" fontSize="10" fill="#b89a6e" textAnchor="middle" letterSpacing="3">MEMORIES</text>
-              <text x="110" y="64" fontFamily="serif" fontSize="6" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
-              <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5"/>
-              <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5"/>
-              <circle cx="60" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4"/><circle cx="60" cy="93" r="2.5" fill="#b89a6e"/>
-              <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4"/><circle cx="160" cy="93" r="2.5" fill="#b89a6e"/>
+              <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
+              <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
+              <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6" />
+              <text x="110" y="52" fontFamily="Inter, sans-serif" fontSize="14" fill="#b89a6e" textAnchor="middle">memories</text>
+              <text x="110" y="66" fontFamily="serif" fontSize="6" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
+              <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
+              <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
+              <circle cx="60" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="60" cy="93" r="2.5" fill="#b89a6e" />
+              <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="160" cy="93" r="2.5" fill="#b89a6e" />
             </svg>
           </div>
-          
-          <div onClick={() => setPhase('feedback')} style={{
-            fontSize:'clamp(7px,1.2vw,9px)',color:'rgba(74,63,48,.2)',textTransform:'uppercase',letterSpacing:'.2em',cursor:'pointer',
-          }}>Skip</div>
         </div>
- 
-        {/* ═══ FEEDBACK SCREEN ═══ */}
+
+        {/* TV */}
         <div style={{
-          position:'fixed',inset:0,zIndex:phase==='feedback'?50:0,
-          display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-          background:'radial-gradient(ellipse at 50% 30%,#F5EFE7,#E8DDD0)',
-          opacity:phase==='feedback'?1:0,pointerEvents:phase==='feedback'?'auto':'none',
-          transition:'opacity .8s ease',
+          position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.92)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
+          opacity: showTV ? 1 : 0, pointerEvents: showTV ? 'auto' : 'none', transition: 'opacity .4s',
+        }}>
+          <div style={{ position: 'relative', width: 'min(70vw,440px)', background: '#724933', borderRadius: '14px 14px 20px 20px', padding: '10px 12px 22px', boxShadow: '0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #724933' }}>
+            <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
+              <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
+                <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
+                <video ref={vRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2 }} playsInline controls onEnded={onVideoEnded} />
+                <iframe ref={iRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2, border: 'none', display: 'none' }} allow="autoplay" title="Video" />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
+            </div>
+            <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: C.text, letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
+            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#724933', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
+          </div>
+          {(videoEnded || !videoUrl) && (
+            <button onClick={closeToEnding} style={continueBtn}>Continue</button>
+          )}
+        </div>
+
+        {/* ENDING */}
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: phase === 'ending' ? 60 : 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          opacity: phase === 'ending' ? 1 : 0, pointerEvents: phase === 'ending' ? 'auto' : 'none',
+          transition: 'opacity 1.5s ease', padding: '40px 24px',
         }}>
           <div style={{
-            background:'rgba(255,252,245,.7)',backdropFilter:'blur(8px)',
-            border:'1px solid rgba(184,154,110,.18)',borderRadius:'18px',
-            padding:'clamp(16px,3vw,28px)',maxWidth:'340px',width:'90%',
-            boxShadow:'0 12px 28px -6px rgba(0,0,0,.06)',
-            animation:'mj-fadeIn .8s ease',
-          }}>
-            {!fbSent ? (<>
-              <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,18px)',color:'#3c3326',textAlign:'center',marginBottom:'4px' }}>How Did We Do?</div>
-              <div style={{ color:'#a88d66',fontSize:'clamp(8px,1.4vw,10px)',textAlign:'center',marginBottom:'12px',letterSpacing:'.1em' }}>Your voice means everything</div>
-              <div style={{ display:'flex',justifyContent:'center',gap:'6px',marginBottom:'10px' }}>
-                {[1,2,3,4,5].map(n => (
-                  <span key={n} onClick={() => setRating(n)} style={{
-                    fontSize:'1.3rem',cursor:'pointer',color:n <= rating ? '#C6A97E' : 'rgba(60,51,38,.08)',transition:'all .12s',
-                  }}>&#9733;</span>
-                ))}
-              </div>
-              <input placeholder="Your name (optional)" value={fbName} onChange={e => setFbName(e.target.value)} style={{
-                width:'100%',padding:'7px 10px',background:'rgba(255,255,255,.4)',border:'1px solid rgba(184,154,110,.25)',
-                borderRadius:'10px',fontSize:'.7rem',marginBottom:'6px',outline:'none',fontFamily:'inherit',color:'#2e2a24',
-              }} />
-              <textarea placeholder="Leave a message of love..." value={fbComment} onChange={e => setFbComment(e.target.value)} style={{
-                width:'100%',padding:'7px 10px',background:'rgba(255,255,255,.4)',border:'1px solid rgba(184,154,110,.25)',
-                borderRadius:'10px',fontSize:'.7rem',marginBottom:'8px',outline:'none',fontFamily:'inherit',color:'#2e2a24',resize:'none',height:'55px',
-              }} />
-              <button disabled={fbLoading} onClick={submitFb} style={{
-                width:'100%',padding:'7px',background:'linear-gradient(135deg,#b89a6e,#C6A97E)',border:'none',
-                borderRadius:'24px',color:'#2e2a24',fontWeight:600,fontSize:'.7rem',cursor:'pointer',fontFamily:'inherit',
-                opacity:fbLoading?.35:1,
-              }}>{fbLoading ? 'Sending...' : 'Send Love'}</button>
-            </>) : (
-              <div style={{ textAlign:'center',animation:'mj-fadeIn .6s ease' }}>
-                <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,18px)',color:'#b89a6e',marginBottom:'4px' }}>Thank You</div>
-                <div style={{ color:'#6b5a48',fontSize:'.65rem' }}>Your message has been received with love.</div>
-              </div>
-            )}
-          </div>
+            fontFamily: F.sans, fontSize: 'clamp(40px,7vw,72px)',
+            color: C.text, fontWeight: 600, textAlign: 'center', lineHeight: 1.1,
+            textShadow: '0 2px 12px rgba(114,73,51,.12)',
+            animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease both' : 'none',
+          }}>Love you always 💝</div>
+          <div style={{
+            marginTop: 'clamp(24px,4vw,40px)',
+            fontFamily: F.sans,
+            fontSize: 'clamp(9px,1.2vw,11px)', letterSpacing: '5px',
+            textTransform: 'uppercase', color: C.textSoft, fontWeight: 600,
+            animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease 1s both' : 'none',
+            opacity: 0,
+          }}>Memora · {year}</div>
         </div>
- 
-        {/* ── TV Modal (smaller) ── */}
-        <div style={{
-          position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,.92)',
-          display:'flex',alignItems:'center',justifyContent:'center',
-          opacity:showTV?1:0,pointerEvents:showTV?'auto':'none',transition:'opacity .4s',
-        }}>
-          <div style={{ position:'relative',width:'min(65vw,380px)',background:'#2a251e',borderRadius:'14px 14px 20px 20px',padding:'10px 12px 22px',boxShadow:'0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #5e4e38' }}>
-            <div style={{ background:'#0f0e0a',borderRadius:'8px',padding:'4px' }}>
-              <div style={{ position:'relative',borderRadius:'6px',overflow:'hidden',aspectRatio:'16/9',background:'#000' }}>
-                <div style={{ position:'absolute',inset:0,background:'#555',transition:'opacity .5s',zIndex:5,opacity:tvStatic?1:0 }} />
-                <video ref={vRef} style={{ position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain',zIndex:2 }} playsInline controls onEnded={closeTV} />
-                <iframe ref={iRef} style={{ position:'absolute',inset:0,width:'100%',height:'100%',zIndex:2,border:'none',display:'none' }} allow="autoplay" title="Video" />
-              </div>
-            </div>
-            <div style={{ display:'flex',justifyContent:'center',gap:'6px',marginTop:'4px' }}>
-              <div style={{ width:'12px',height:'12px',borderRadius:'50%',background:'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)',boxShadow:'0 1px 2px rgba(0,0,0,.4)' }} />
-              <div style={{ width:'12px',height:'12px',borderRadius:'50%',background:'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)',boxShadow:'0 1px 2px rgba(0,0,0,.4)' }} />
-            </div>
-            <div style={{ textAlign:'center',marginTop:'3px',fontFamily:"'Playfair Display',serif",fontSize:'.4rem',letterSpacing:'.3em',color:'#5e4e38',textTransform:'uppercase' }}>Memória</div>
-            <div style={{ position:'absolute',bottom:'-8px',right:'12px',width:'4px',height:'4px',borderRadius:'50%',background:tvLed?'#2eff5e':'#2a251e',boxShadow:tvLed?'0 0 6px #2eff5e':'none',transition:'all .3s' }} />
-            <div onClick={closeTV} style={{ position:'absolute',top:'-8px',right:'-8px',width:'22px',height:'22px',borderRadius:'50%',background:'#3c3326',border:'1px solid #C6A97E',color:'#C6A97E',fontSize:'.65rem',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-              &#10005;
-            </div>
-          </div>
-        </div>
+
+        {/* TOOLTIP */}
+        {tooltip && (
+          <div key={tooltip} className="mj-tooltip" style={{
+            position: 'fixed', top: 'clamp(24px,6vh,60px)', left: '50%',
+            transform: 'translateX(-50%)', zIndex: 500,
+            padding: '10px 20px', background: `${C.text}E6`,
+            backdropFilter: 'blur(10px)', border: `1px solid ${C.gold}66`,
+            borderRadius: '30px', color: '#F5E6CC',
+            fontFamily: F.sans, fontSize: 'clamp(12px,1.6vw,14px)', fontWeight: 500,
+            letterSpacing: '.02em', pointerEvents: 'none', whiteSpace: 'nowrap',
+            boxShadow: '0 8px 24px rgba(114,73,51,.25)',
+          }}>{tooltip}</div>
+        )}
       </div>
     </>
   );
 }
+
+function CoverFace({ recipient, year }: { recipient: string; year: string }) {
+  return (
+    <div style={{
+      width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: 'clamp(20px,5vw,40px)', textAlign: 'center', position: 'relative',
+    }}>
+      <div style={{ position: 'absolute', inset: '14px', border: `1px solid ${C.gold}99`, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', inset: '20px', border: `.5px solid ${C.gold}4D`, pointerEvents: 'none' }} />
+      <div style={{ fontSize: 'clamp(10px,1.8vw,14px)', color: C.gold, letterSpacing: '8px', marginBottom: 'clamp(16px,3vw,28px)', opacity: .9 }}>❦</div>
+      <div style={{ fontFamily: F.sans, fontSize: 'clamp(10px,1.6vw,12px)', fontWeight: 500, color: C.gold, letterSpacing: '6px', textTransform: 'uppercase', marginBottom: '14px', opacity: .85 }}>For</div>
+      <div style={{ fontFamily: F.hand, fontSize: 'clamp(34px,7vw,58px)', color: '#F5E6CC', lineHeight: 1, marginBottom: '6px' }}>{recipient}</div>
+      <div style={{ width: '50px', height: '1px', background: `linear-gradient(to right, transparent, ${C.gold}, transparent)`, margin: 'clamp(20px,3vw,30px) auto' }} />
+      <div style={{ fontFamily: F.sans, fontSize: 'clamp(9px,1.4vw,11px)', fontWeight: 500, color: '#C9A06B', letterSpacing: '6px', textTransform: 'uppercase', opacity: .85 }}>Album of Memories</div>
+      <div style={{ position: 'absolute', bottom: 'clamp(28px,5vw,44px)', left: '50%', transform: 'translateX(-50%)', fontFamily: F.sans, fontSize: 'clamp(8px,1.2vw,10px)', color: '#C9A06B', letterSpacing: '4px', fontWeight: 400, opacity: .6 }}>MEMORA · {year}</div>
+    </div>
+  );
+}
+
+const navBtn = (disabled: boolean): React.CSSProperties => ({
+  width: 'clamp(36px,6vw,46px)', height: 'clamp(36px,6vw,46px)',
+  background: `${C.text}14`,
+  border: `1px solid ${C.text}4D`, borderRadius: '50%',
+  color: C.text, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  opacity: disabled ? .25 : 1, transition: 'all .25s',
+  backdropFilter: 'blur(8px)',
+});
+
+const continueBtn: React.CSSProperties = {
+  padding: '14px 36px',
+  background: C.text,
+  border: `1px solid ${C.text}`,
+  borderRadius: '40px',
+  color: '#F5E6CC',
+  fontFamily: F.sans,
+  fontWeight: 500,
+  fontSize: 'clamp(13px,1.8vw,15px)',
+  letterSpacing: '.15em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+  boxShadow: '0 8px 24px -6px rgba(114,73,51,.35)',
+  animation: 'mj-fadeInSlow 1.2s ease both',
+};
